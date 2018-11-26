@@ -10,21 +10,17 @@
 #include "polifitgsl.cpp"
 
 #define DEGREE 3 // Grau da aproximacao polinomial
-#define DEBUG 1
+//#define DEBUG
 
-// TODO  - TENTAR ESTIMAR O POLINOMIO SO COM OS PONTOS QUE EXISTEM ( NAO -1 ) pra verrrr
-// 		 -  NAO FAZER SLIDING WINDOW EM TODO FRAME (? como)
 using namespace cv;
 using namespace std;
-
-
-
+//TODO -- SE NAO ACHAR NENHUMA DAS LANES USAR UM OFFSETs
 vector<Point2f> perspectivePoints;
 int perspectiveReady = 0;
 
 // Tamanho da imagem final perspectiva
-int Mapax = 500;
-int Mapay = 1500;
+int Mapax = 200;
+int Mapay = 250;
 vector<Point2f> mapa(4);
 
 void CallBackFunc(int event, int x, int y, int flags, void* param)
@@ -64,17 +60,6 @@ Point findPositionHistogram(Mat input, int centerL, int centerR, int windowSize)
 	int isZeroR = 1;
 	int isZeroL = 1;
 	//---------LEFT LANE-----------//
-	// for(int i = centerL - windowSize/2; i < centerL + windowSize/2; i++){
-	// 	int sum = 0;
-	// 	for (int j = 0; j < input.rows; j++){
-	// 		if(input.at<uchar>(j,i) == 255){
-	// 			sum++;
-	// 			isZeroL = 0;
-	// 		}
-
-	// 	}
-	// 	LeftLanePos.push_back(sum);
-	// }
 
 	uint8_t* pixelPtr = (uint8_t*)input.data;
 	int cn = input.channels();
@@ -91,16 +76,6 @@ Point findPositionHistogram(Mat input, int centerL, int centerR, int windowSize)
 		LeftLanePos.push_back(sum);
 	}
 	//---------RIGHT LANE-----------//
-	// for(int i = centerR - windowSize/2; i < centerR + windowSize/2; i++){
-	// 	int sum = 0;
-	// 	for (int j = 0; j < input.rows; j++){
-	// 		if(input.at<uchar>(j,i) == 255){
-	// 			sum++;
-	// 			isZeroR = 0;
-	// 		}
-	// 	}
-	// 	RightLanePos.push_back(sum);
-	// }
 
 	for(int i = centerR - windowSize/2; i < centerR + windowSize/2; i++){
 		int sum = 0;
@@ -130,7 +105,9 @@ int findLane(Mat frame, Mat input, Mat &output){
 	
 
 	int subdivisions = 15; //offset "calibrado" pra 15
-	int localMaskWidht = 70;
+	int localMaskWidht = 20;
+	int lineThickness = 1;
+	int laneThickness = 10;
 
 	Rect localMaskL;
 	Rect localMaskR;
@@ -208,9 +185,9 @@ int findLane(Mat frame, Mat input, Mat &output){
 		#ifdef DEBUG
 		Rect lane = Rect(lastPeakL + localMaskWidht/2, 0, distBetLanes - localMaskWidht, slice.rows);
 		cvtColor(slice, slice, COLOR_GRAY2BGR);
-		rectangle(slice, localMaskL, Scalar(0, 255, 0) , 3);
-		rectangle(slice, localMaskR, Scalar(0, 255, 0) , 3);
-		rectangle(slice, lane, Scalar(220, 10, 10) , 3);
+		rectangle(slice, localMaskL, Scalar(0, 255, 0) , lineThickness);
+		rectangle(slice, localMaskR, Scalar(0, 255, 0) ,lineThickness);
+		rectangle(slice, lane, Scalar(220, 10, 10) , lineThickness);
 		slice.rowRange(0, slice.rows).copyTo(mask.rowRange((subdivisions-1-i)*(Mapay/subdivisions), (subdivisions-1-i)*(Mapay/subdivisions) + (Mapay/subdivisions))); 
 		#endif
 	}
@@ -229,6 +206,7 @@ int findLane(Mat frame, Mat input, Mat &output){
 	// findQuadCoefficients(Y, XL, coeffL, crit, subdivisions);
 	// findQuadCoefficients(Y, XR, coeffR, crit, subdivisions);
 
+	#ifdef DEBUG
 	for(int i = 0; i < DEGREE;i++){
 		cout << coeffL[i] << " ";
 	}
@@ -237,11 +215,16 @@ int findLane(Mat frame, Mat input, Mat &output){
 		cout << coeffR[i] << " ";
 	}
 	cout << "\n";
+	#endif
   	// CALCULO DA APROX POLI
 
   	vector<Point> curveLaneL;
   	vector<Point> curveLaneR;
 	
+	// float radiusL = 
+
+	// cout << "RL " << radiusL << "\n";
+	// cout << "RR " << radiusR << "\n";	
 
 	for(int i = 0; i < Mapay;i++){
 		
@@ -253,11 +236,13 @@ int findLane(Mat frame, Mat input, Mat &output){
 
 	}
 
+
+
 	Mat maskPoly = Mat::zeros(mask.size(),mask.type());
 	Mat laneL(curveLaneL, true); 
-	polylines(maskPoly, laneL, false, Scalar(255,0,0), 20, LINE_4);
+	polylines(maskPoly, laneL, false, Scalar(255,0,0), laneThickness, LINE_4);
 	Mat laneR(curveLaneR, true);
-	polylines(maskPoly, laneR, false, Scalar(255,0,0), 20, LINE_4);
+	polylines(maskPoly, laneR, false, Scalar(255,0,0), laneThickness, LINE_4);
 
 
 	uint8_t* pixelPtr = (uint8_t*)maskPoly.data;
@@ -279,11 +264,13 @@ int findLane(Mat frame, Mat input, Mat &output){
 
   	char str[50];
 	// Classifica a curva de acordo com o offset acumulado do frame// -- Pouco robusto
-	if(offsetR < 0 && offsetL < 0){
-		if(offsetL < -30 || offsetR < -30)
+	int offminL = -10;
+	int offminR = 10;
+
+	if(offsetL < offminL || offsetR < offminL){
 			sprintf(str,"Curva Esquerda");
-	}else if(offsetR > 0 && offsetL > 0){
-		if(offsetL > 20 || offsetR > 20)
+
+	}else if(offsetL > offminR || offsetR > offminR){
 			sprintf(str,"Curva Direita");
 	}else{
 		sprintf(str,"Estrada Reta");
