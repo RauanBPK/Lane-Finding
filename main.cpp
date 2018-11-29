@@ -10,7 +10,7 @@
 #include "polifitgsl.cpp"
 
 #define DEGREE 3 // Grau da aproximacao polinomial
-//#define DEBUG
+#define DEBUG
 
 using namespace cv;
 using namespace std;
@@ -328,7 +328,32 @@ Mat equalizeIntensity(const Mat& inputImage)
     }
     return Mat();
 }
+Mat applyCLAHE(const Mat& input)
+{
+    Mat lab_image;
+    cvtColor(input, lab_image, COLOR_BGR2Lab);
 
+    // Extract the L channel
+    vector<cv::Mat> lab_planes(3);
+    split(lab_image, lab_planes);  // now we have the L image in lab_planes[0]
+
+    // apply the CLAHE algorithm to the L channel
+    Ptr<cv::CLAHE> clahe = cv::createCLAHE();
+    clahe->setClipLimit(4);
+    Mat dst;
+    clahe->apply(lab_planes[0], dst);
+
+    // Merge the the color planes back into an Lab image
+    dst.copyTo(lab_planes[0]);
+    cv::merge(lab_planes, lab_image);
+
+   // convert back to RGB
+   cv::Mat image_clahe;
+   cv::cvtColor(lab_image, image_clahe, COLOR_Lab2BGR);
+
+   // display the results  (you might also want to see lab_planes[0] before and after).
+   return image_clahe;
+}
 Mat extractYellow(Mat &input){
 
 	// TECNICA POR CIELAB
@@ -337,17 +362,29 @@ Mat extractYellow(Mat &input){
 	vector<Mat> channels;
 	split(output,channels);
 	output = channels[2].clone();
-	threshold( output, output, 150, 255, THRESH_BINARY); // th na mascara amarela pq ela é cinza
+	threshold( output, output, 165, 255, THRESH_BINARY); // th na mascara amarela pq ela é cinza
+
+	// ACHA VERDE E SUBTRAI -- Verde parece amarelo
+	Mat outputG;
+	cvtColor(input, outputG, COLOR_BGR2HSV);
+	inRange(outputG, Scalar(41, 39, 64), Scalar(80, 255, 255), outputG);
+
+	output = output - outputG;
+
 	return output;
+
 }
 
 Mat extractWhite(Mat &input){
 
 	//TECNICA POR CIELAB
-	Mat imgHLS;
-	cvtColor(input, imgHLS, COLOR_BGR2Lab);
+	// Mat imgHLS;
+	// cvtColor(input, imgHLS, COLOR_BGR2Lab);
+	// Mat output;
+	// inRange(imgHLS, Scalar(220, 120, 120), Scalar(255, 255, 255), output);
+	// return output;
 	Mat output;
-	inRange(imgHLS, Scalar(220, 100, 100), Scalar(255, 255, 255), output);
+	inRange(input, Scalar(220, 220, 220), Scalar(255, 255, 255), output);
 	return output;
 
 }
@@ -355,13 +392,19 @@ Mat extractWhite(Mat &input){
 Mat thresholdLane(Mat input){
 	
 	Mat hist;
-	Mat exYellow, exWhite, border;
+	Mat exYellow, exWhite;
 	Mat output;
 	exYellow = exWhite =  input.clone();
+	
 
-	//hist = equalizeIntensity(input); //--nem precisa equalizar
-	exYellow = extractYellow(input);
 	exWhite = extractWhite(input);
+	//input = equalizeIntensity(input); //--nem precisa equalizar
+	//input = applyCLAHE(input);
+	exYellow = extractYellow(input);
+	#ifdef DEBUG
+	imshow("Yellow",exYellow);
+	imshow("White",exWhite);
+	#endif
 
 	bitwise_or(exYellow,exWhite,output);
 	return output;
@@ -378,9 +421,12 @@ int main(int argc, char *argv[]){
 
     namedWindow("FrameOriginal", WINDOW_KEEPRATIO);
     namedWindow("FrameProcessado", WINDOW_KEEPRATIO);
-   // namedWindow("FramePerspective", WINDOW_KEEPRATIO);
-    //namedWindow("FrameThreshold", WINDOW_KEEPRATIO);
+    namedWindow("FramePerspective", WINDOW_KEEPRATIO);
+   
    	#ifdef DEBUG
+   	namedWindow("FrameThreshold", WINDOW_KEEPRATIO);
+   	namedWindow("White", WINDOW_KEEPRATIO);
+   	namedWindow("Yellow", WINDOW_KEEPRATIO);
     namedWindow("FrameMask", WINDOW_KEEPRATIO);
     namedWindow("FrameMaskPoly", WINDOW_KEEPRATIO);
 	#endif
@@ -411,9 +457,9 @@ int main(int argc, char *argv[]){
     	if(perspectiveReady){
     		Mat perspective, thresholdFrame;
     		perspective = calculatePerspective(perspectivePoints, frame);
-    		//imshow( "FramePerspective", perspective );
+    		imshow( "FramePerspective", perspective );
     		thresholdFrame = thresholdLane(perspective);
-    		//imshow( "FrameThreshold", thresholdFrame );
+    		imshow( "FrameThreshold", thresholdFrame );
     		processed = Mat::zeros(frame.size(), frame.type());
 			findLane(frame, thresholdFrame, processed);
 			
