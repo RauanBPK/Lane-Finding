@@ -9,12 +9,12 @@
 #include <stdio.h>
 #include "polifitgsl.cpp"
 
-#define DEGREE 3 // Grau da aproximacao polinomial
+#define DEGREE 3 // Grau da aproximacao polinomial + 1(?)
 #define DEBUG
 
 using namespace cv;
 using namespace std;
-//TODO -- SE NAO ACHAR NENHUMA DAS LANES USAR UM OFFSETs
+
 vector<Point2f> perspectivePoints;
 int perspectiveReady = 0;
 
@@ -23,13 +23,12 @@ int Mapax = 200;
 int Mapay = 250;
 vector<Point2f> mapa(4);
 
-void CallBackFunc(int event, int x, int y, int flags, void* param)
-{
+void CallBackFunc(int event, int x, int y, int flags, void* param){
 	Scalar color(0,100,255);
 	static int i = 0;
-    Mat *persMat =  (Mat*)param;
-    if ( event == EVENT_FLAG_LBUTTON )
-    {
+	Mat *persMat =  (Mat*)param;
+	if ( event == EVENT_FLAG_LBUTTON )
+	{
 		if(perspectivePoints.size() < 4){
 			perspectivePoints.push_back(Point(x,y));
 
@@ -98,7 +97,7 @@ Point findPositionHistogram(Mat input, int centerL, int centerR, int windowSize)
 
 	return Point(peakL,peakR);
 }
- 
+
 
 
 int findLane(Mat frame, Mat input, Mat &output){
@@ -115,20 +114,26 @@ int findLane(Mat frame, Mat input, Mat &output){
 	int static distBetLanes;
 	int static lastPeakR;
 	int static lastPeakL;
-	int static firstWR = input.cols*3/4;
 	int offsetL = 0;
 	int offsetR = 0;
 //------------------------------VERIFICAR AQUI------------------------// VV
 	if(1/*ff*/){
-		Rect roi(0, input.rows/2, Mapax, input.rows/2);
-		Mat slice(input,roi);
-		Point peakPosition = findPositionHistogram(slice, input.cols/4, input.cols*3/4, input.cols/2);
+	Rect roi(0, input.rows/2, Mapax, input.rows/2);
+	Mat slice(input,roi);
+	Point peakPosition = findPositionHistogram(slice, input.cols/4, input.cols*3/4, input.cols/2);
+	if(lastPeakL != -1)
 		lastPeakL = peakPosition.x;
+	else
+		lastPeakL = lastPeakR - distBetLanes;
+	if(lastPeakR != -1)
 		lastPeakR = peakPosition.y;
+	else
+		lastPeakR = lastPeakL + distBetLanes;
+
+	if(lastPeakL != -1 && lastPeakR != -1)
 		distBetLanes = lastPeakR - lastPeakL;
-		ff = 0;
-	}
-	
+//------------------------------------------------------------
+
 	vector<double> _Y;
 	vector<double> _XL;
 	vector<double> _XR;
@@ -138,41 +143,34 @@ int findLane(Mat frame, Mat input, Mat &output){
 
 		Rect roi(0, (subdivisions-1-i)*(Mapay/subdivisions), Mapax, (Mapay/subdivisions));
 		Mat slice(input,roi);
-		
+
 		Point peakPosition = findPositionHistogram(slice, lastPeakL, lastPeakR, localMaskWidht);
-		
+
 
 		if(peakPosition.x != -1){
 			offsetL += (peakPosition.x - lastPeakL);
 			lastPeakL = peakPosition.x;
 			localMaskL = Rect(peakPosition.x - localMaskWidht/2, 0, localMaskWidht, slice.rows);
-				_XL.push_back(peakPosition.x);
-			
+			_XL.push_back(peakPosition.x);
+
 		}else{
 
 			localMaskL = Rect(lastPeakR - distBetLanes - localMaskWidht/2, 0, localMaskWidht, slice.rows);
 
-				_XL.push_back(lastPeakR - distBetLanes);
+			_XL.push_back(lastPeakR - distBetLanes);
 		}
 		if(peakPosition.y != -1){
-			if(i == 0){
-				firstWR = peakPosition.y;
-			}
+
 			offsetR += (peakPosition.y - lastPeakR);
 			lastPeakR = peakPosition.y;
 			localMaskR = Rect(peakPosition.y - localMaskWidht/2, 0, localMaskWidht, slice.rows);
 
-				_XR.push_back(peakPosition.y);
-			
+			_XR.push_back(peakPosition.y);
+
 		}else{
-			if(i == 0){
-				localMaskR = Rect(firstWR - localMaskWidht/2, 0, localMaskWidht, slice.rows);
-				_XR.push_back(firstWR);
-			}else{
-				localMaskR = Rect(lastPeakL + distBetLanes - localMaskWidht/2, 0, localMaskWidht, slice.rows);
-				_XR.push_back(lastPeakL + distBetLanes);
-			}
-				
+			localMaskR = Rect(lastPeakL + distBetLanes - localMaskWidht/2, 0, localMaskWidht, slice.rows);
+			_XR.push_back(lastPeakL + distBetLanes);
+
 		}
 		_Y.push_back((subdivisions-i)*(Mapay/subdivisions));
 
@@ -180,7 +178,7 @@ int findLane(Mat frame, Mat input, Mat &output){
 		if(peakPosition.x != -1 && peakPosition.y != -1){
 			distBetLanes = lastPeakR - lastPeakL;
 		}
-		
+
 		//--DESENHA RETANGULOS SUBDIVISION--//
 		#ifdef DEBUG
 		Rect lane = Rect(lastPeakL + localMaskWidht/2, 0, distBetLanes - localMaskWidht, slice.rows);
@@ -200,7 +198,7 @@ int findLane(Mat frame, Mat input, Mat &output){
 
 	polynomialfit(subdivisions, DEGREE, Y, XL, coeffL);
 	polynomialfit(subdivisions, DEGREE, Y, XR, coeffR);
-	
+
 	//--Funcao alternativa pra achar os coeficientes--//
 	// double crit;
 	// findQuadCoefficients(Y, XL, coeffL, crit, subdivisions);
@@ -218,16 +216,16 @@ int findLane(Mat frame, Mat input, Mat &output){
 	#endif
   	// CALCULO DA APROX POLI
 
-  	vector<Point> curveLaneL;
-  	vector<Point> curveLaneR;
-	
+	vector<Point> curveLaneL;
+	vector<Point> curveLaneR;
+
 	// float radiusL = 
 
 	// cout << "RL " << radiusL << "\n";
 	// cout << "RR " << radiusR << "\n";	
 
 	for(int i = 0; i < Mapay;i++){
-		
+
 		float yL =pow(i,2)*coeffL[2] + i*coeffL[1] + coeffL[0];         
 		curveLaneL.push_back(Point((int)yL,i));
 
@@ -262,37 +260,37 @@ int findLane(Mat frame, Mat input, Mat &output){
    }
 
 
-  	char str[50];
+   char str[50];
 	// Classifica a curva de acordo com o offset acumulado do frame// -- Pouco robusto
-	int offminL = -10;
-	int offminR = 10;
+   int offminL = -10;
+   int offminR = 10;
 
-	if(offsetL < offminL || offsetR < offminL){
-			sprintf(str,"Curva Esquerda");
+   if(offsetL < offminL || offsetR < offminL){
+   	sprintf(str,"Curva Esquerda");
 
-	}else if(offsetL > offminR || offsetR > offminR){
-			sprintf(str,"Curva Direita");
-	}else{
-		sprintf(str,"Estrada Reta");
-	}
+   }else if(offsetL > offminR || offsetR > offminR){
+   	sprintf(str,"Curva Direita");
+   }else{
+   	sprintf(str,"Estrada Reta");
+   }
 
-	putText(frame, str, Point(50,100), FONT_HERSHEY_PLAIN,3, Scalar(0,255,10),3);
-	sprintf(str,"Rauan Pires - 14103318");
-	putText(frame, str, Point(50,50), FONT_HERSHEY_PLAIN,3, Scalar(255,50,0),3);
+   putText(frame, str, Point(50,100), FONT_HERSHEY_PLAIN,3, Scalar(0,255,10),3);
+   sprintf(str,"Rauan Pires - 14103318");
+   putText(frame, str, Point(50,50), FONT_HERSHEY_PLAIN,3, Scalar(255,50,0),3);
 	//-------------------------------------------------------------//
 
 	//---Perspectiva inversa para projetar no frame original-------//
-	Mat lambda = getPerspectiveTransform( mapa, perspectivePoints );
-	warpPerspective(maskPoly,output,lambda,frame.size());
+   Mat lambda = getPerspectiveTransform( mapa, perspectivePoints );
+   warpPerspective(maskPoly,output,lambda,frame.size());
 
-	addWeighted(output, 0.5, frame, 1.0, 0.0, output);
+   addWeighted(output, 0.5, frame, 1.0, 0.0, output);
 	//-------------------------------------------------------------//
 	#ifdef DEBUG
-	imshow("FrameMask",mask);
-	imshow("FrameMaskPoly",maskPoly);
+   imshow("FrameMask",mask);
+   imshow("FrameMaskPoly",maskPoly);
 	#endif
-	return 0;
-
+   return 0;
+}
 }
 
 Mat calculatePerspective(vector<Point2f> perspecPoints,Mat input){
@@ -308,33 +306,33 @@ Mat calculatePerspective(vector<Point2f> perspecPoints,Mat input){
 
 Mat equalizeIntensity(const Mat& inputImage)
 {
-    if(inputImage.channels() >= 3)
-    {
-        Mat ycrcb;
+	if(inputImage.channels() >= 3)
+	{
+		Mat ycrcb;
 
-        cvtColor(inputImage,ycrcb,COLOR_BGR2YCrCb);
+		cvtColor(inputImage,ycrcb,COLOR_BGR2YCrCb);
 
-        vector<Mat> channels;
-        split(ycrcb,channels);
+		vector<Mat> channels;
+		split(ycrcb,channels);
 
-        equalizeHist(channels[0], channels[0]);
+		equalizeHist(channels[0], channels[0]);
 
-        Mat result;
-        merge(channels,ycrcb);
+		Mat result;
+		merge(channels,ycrcb);
 
-        cvtColor(ycrcb,result,COLOR_YCrCb2BGR);
+		cvtColor(ycrcb,result,COLOR_YCrCb2BGR);
 
-        return result;
-    }
-    return Mat();
+		return result;
+	}
+	return Mat();
 }
 Mat applyCLAHE(const Mat& input)
 {
-    Mat lab_image;
-    cvtColor(input, lab_image, COLOR_BGR2Lab);
+	Mat lab_image;
+	cvtColor(input, lab_image, COLOR_BGR2Lab);
 
     // Extract the L channel
-    vector<cv::Mat> lab_planes(3);
+	vector<cv::Mat> lab_planes(3);
     split(lab_image, lab_planes);  // now we have the L image in lab_planes[0]
 
     // apply the CLAHE algorithm to the L channel
@@ -348,11 +346,11 @@ Mat applyCLAHE(const Mat& input)
     cv::merge(lab_planes, lab_image);
 
    // convert back to RGB
-   cv::Mat image_clahe;
-   cv::cvtColor(lab_image, image_clahe, COLOR_Lab2BGR);
+    cv::Mat image_clahe;
+    cv::cvtColor(lab_image, image_clahe, COLOR_Lab2BGR);
 
    // display the results  (you might also want to see lab_planes[0] before and after).
-   return image_clahe;
+    return image_clahe;
 }
 Mat extractYellow(Mat &input){
 
@@ -364,7 +362,7 @@ Mat extractYellow(Mat &input){
 	output = channels[2].clone();
 	threshold( output, output, 165, 255, THRESH_BINARY); // th na mascara amarela pq ela é cinza
 
-	// ACHA VERDE E SUBTRAI -- Verde parece amarelo
+	// ACHA VERDE E SUBTRAI -- Verde parece amarelo            
 	Mat outputG;
 	cvtColor(input, outputG, COLOR_BGR2HSV);
 	inRange(outputG, Scalar(41, 39, 64), Scalar(80, 255, 255), outputG);
@@ -412,23 +410,23 @@ Mat thresholdLane(Mat input){
 }
 
 int main(int argc, char *argv[]){
-    
-    if(argc < 2){
-        cout << "Wrong number of arguments.\n";
-        cout << "./<bin> + \"video_input.mp4\"\n";
-        return -1;
-    }
 
-    namedWindow("FrameOriginal", WINDOW_KEEPRATIO);
-    namedWindow("FrameProcessado", WINDOW_KEEPRATIO);
-    namedWindow("FramePerspective", WINDOW_KEEPRATIO);
-   
+	if(argc < 2){
+		cout << "Wrong number of arguments.\n";
+		cout << "./<bin> + \"video_input.mp4\"\n";
+		return -1;
+	}
+
+	namedWindow("FrameOriginal", WINDOW_KEEPRATIO);
+	namedWindow("FrameProcessado", WINDOW_KEEPRATIO);
+	namedWindow("FramePerspective", WINDOW_KEEPRATIO);
+
    	#ifdef DEBUG
-   	namedWindow("FrameThreshold", WINDOW_KEEPRATIO);
-   	namedWindow("White", WINDOW_KEEPRATIO);
-   	namedWindow("Yellow", WINDOW_KEEPRATIO);
-    namedWindow("FrameMask", WINDOW_KEEPRATIO);
-    namedWindow("FrameMaskPoly", WINDOW_KEEPRATIO);
+	namedWindow("FrameThreshold", WINDOW_KEEPRATIO);
+	namedWindow("White", WINDOW_KEEPRATIO);
+	namedWindow("Yellow", WINDOW_KEEPRATIO);
+	namedWindow("FrameMask", WINDOW_KEEPRATIO);
+	namedWindow("FrameMaskPoly", WINDOW_KEEPRATIO);
 	#endif
 
 	mapa[0] = Point2f(0,0);
@@ -436,45 +434,45 @@ int main(int argc, char *argv[]){
 	mapa[2] = Point2f(Mapax, Mapay);
 	mapa[3] = Point2f(0, Mapay);
 
-    VideoCapture cap(argv[1]); 
+	VideoCapture cap(argv[1]); 
 
-    if(!cap.isOpened()){
-        cout << "Error opening video stream or file" << endl;
-        return -1;
-    }
+	if(!cap.isOpened()){
+		cout << "Error opening video stream or file" << endl;
+		return -1;
+	}
 
-    Mat frame;
-    Mat processed;
-    Mat thresholdFrame;
+	Mat frame;
+	Mat processed;
+	Mat thresholdFrame;
 
 	setMouseCallback("FrameOriginal", CallBackFunc, &frame);
 
 
-    while(cap.isOpened()){
+	while(cap.isOpened()){
 
 
-    	cap >> frame;
-    	if(perspectiveReady){
-    		Mat perspective, thresholdFrame;
-    		perspective = calculatePerspective(perspectivePoints, frame);
-    		imshow( "FramePerspective", perspective );
-    		thresholdFrame = thresholdLane(perspective);
-    		imshow( "FrameThreshold", thresholdFrame );
-    		processed = Mat::zeros(frame.size(), frame.type());
+		cap >> frame;
+		if(perspectiveReady){
+			Mat perspective, thresholdFrame;
+			perspective = calculatePerspective(perspectivePoints, frame);
+			imshow( "FramePerspective", perspective );
+			thresholdFrame = thresholdLane(perspective);
+			imshow( "FrameThreshold", thresholdFrame );
+			processed = Mat::zeros(frame.size(), frame.type());
 			findLane(frame, thresholdFrame, processed);
 			
-    		imshow( "FrameProcessado", processed);
+			imshow( "FrameProcessado", processed);
 
-    	}
-    	imshow( "FrameOriginal", frame );
+		}
+		imshow( "FrameOriginal", frame );
 
-    	
 
-    	waitKey(0);
-    }
-    cap.release();
-    destroyAllWindows();
 
-    return 0;
+		waitKey(0);
+	}
+	cap.release();
+	destroyAllWindows();
+
+	return 0;
 
 }
