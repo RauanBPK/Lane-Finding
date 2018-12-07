@@ -10,7 +10,8 @@
 #include "polifitgsl.cpp"
 
 #define DEGREE 3 // Grau da aproximacao polinomial + 1(?)
-#define DEBUG
+//#define DEBUG
+// intro - metodologia -bibliografia e os caraio
 
 using namespace cv;
 using namespace std;
@@ -104,7 +105,7 @@ int findLane(Mat frame, Mat input, Mat &output){
 	
 
 	int subdivisions = 15; //offset "calibrado" pra 15
-	int localMaskWidht = 20;
+	int localMaskWidht = 25;
 	int lineThickness = 1;
 	int laneThickness = 10;
 
